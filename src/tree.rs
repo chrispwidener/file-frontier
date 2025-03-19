@@ -36,26 +36,28 @@ impl Tree {
     where
         F: Fn(&Node) -> bool,
     {
-        self.iter().filter(|node| predicate(node)).collect()
+        self.iter()
+            .filter(|node| predicate(node))
+            .collect()
     }
 
-    /// Create a new directory at the given relative path from the tree’s root.
-    /// This will update the on-disk structure and refresh the in-memory tree.
-    pub fn create_dir(&mut self, rel_path: &Path) -> io::Result<Node> {
-        let new_path = self.head.path.join(rel_path);
-        std::fs::create_dir_all(&new_path)?;
-        // Refresh the tree to include the new directory.
-        self.refresh()?;
-        // Retrieve and return the new node.
-        self.get_node(&new_path)
-            .cloned()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Node not found"))
-    }
+    // Create a new directory at the given relative path from the tree’s root.
+    // This will update the on-disk structure and refresh the in-memory tree.
+    //pub fn create_dir(&mut self, rel_path: &Path) -> io::Result<Node> {
+        //let new_path = self.head.path.join(rel_path);
+        //std::fs::create_dir_all(&new_path)?;
+        //// Refresh the tree to include the new directory.
+        //self.refresh()?;
+        //// Retrieve and return the new node.
+        //self.get_node(&new_path)
+            //.cloned()
+            //.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Node not found"))
+    //}
 
-    /// Retrieve a node by its path, if it exists in the tree.
-    pub fn get_node(&self, path: &Path) -> Option<&Node> {
-        self.iter().find(|node| node.path == path)
-    }
+    // Retrieve a node by its path, if it exists in the tree.
+    //pub fn get_node(&self, path: &Path) -> Option<&Node> {
+        //self.iter().find(|node| node.path == path)
+    //}
 }
 
 /// An iterator that traverses the tree in a depth-first manner.

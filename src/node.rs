@@ -1,5 +1,6 @@
 use std::fs;
 use std::io;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -13,8 +14,6 @@ pub enum NodeType {
 /// A struct to hold extended metadata about a file or directory.
 #[derive(Debug, Clone)]
 pub struct ExtendedMetadata {
-    /// For files, this is the file size. For directories, this can be the cumulative size.
-    pub size: u64,
     pub modified: Option<SystemTime>,
     pub accessed: Option<SystemTime>,
     pub created: Option<SystemTime>,
@@ -26,7 +25,6 @@ impl ExtendedMetadata {
     pub fn from_path(path: &Path) -> io::Result<Self> {
         let metadata = fs::metadata(path)?;
         Ok(Self {
-            size: metadata.len(),
             modified: metadata.modified().ok(),
             accessed: metadata.accessed().ok(),
             created: metadata.created().ok(),
@@ -46,7 +44,7 @@ pub struct Node {
     /// Child nodes, if any. Directories can have children.
     pub children: Option<Vec<Node>>,
     /// Self Size if File, Cumulative size of all children if Directory.
-    pub size: Option<u32>,
+    pub size: u64,
 }
 
 impl Node {
@@ -58,12 +56,19 @@ impl Node {
         } else {
             NodeType::File
         };
-        Ok(Self {
+
+        let mut node = Self {
             path,
             node_type,
             metadata,
             children: None,
-        })
+            size: 0,
+        };
+
+        node.populate_children();
+        node.calc_size();
+
+        Ok(node)
     }
 
     /// Returns `true` if this node is a file.
@@ -75,6 +80,8 @@ impl Node {
     pub fn is_dir(&self) -> bool {
         matches!(self.node_type, NodeType::Directory)
     }
+
+
 
     /// Populate the node’s children from the file system.
     /// For a directory, reads its contents and creates child nodes.
@@ -94,10 +101,11 @@ impl Node {
 
     /// Recursively updates the size of this node.
     /// For directories, the size is the sum of sizes of all children.
-    pub fn update_size(&mut self) -> io::Result<u64> {
+    fn calc_size(&mut self) -> io::Result<()> {
         if self.is_file() {
-            self.metadata = ExtendedMetadata::from_path(&self.path)?;
-            Ok(self.metadata.size)
+            let metadata = fs::metadata(&self.path)?;
+            self.size = metadata.size();
+            Ok(())
         } else {
             let mut total = 0;
             // Populate children if not already done.
@@ -106,11 +114,79 @@ impl Node {
             }
             if let Some(children) = &mut self.children {
                 for child in children {
-                    total += child.update_size()?;
+                    child.calc_size()?;
+                    total += child.size;
                 }
             }
-            self.metadata.size = total;
-            Ok(total)
+            self.size = total;
+
+            Ok(())
+        }
+    }
+}
+
+use std::fmt;
+
+impl fmt::Display for Node {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.node_type {
+            NodeType::File => {
+                write!(
+                    f,
+                    "File: {} (size: {:?})",
+                    self.path.display(),
+                    self.size,
+                )
+            }
+            NodeType::Directory => {
+                write!(
+                    f,
+                    "Directory: {} (size: {:?})\n",
+                    self.path.display(),
+                    self.size
+                )?;
+
+                // If children are not populated, note that.
+                if self.children.is_none() {
+                    return write!(f, "  [Children not populated]");
+                }
+
+                // Separate children into file and directory vectors.
+                let mut file_children = Vec::new();
+                let mut dir_children = Vec::new();
+
+                if let Some(children) = &self.children {
+                    for child in children {
+                        match child.node_type {
+                            NodeType::File => file_children.push(child),
+                            NodeType::Directory => dir_children.push(child),
+                        }
+                    }
+                }
+
+                // Display file children with path and size.
+                if !file_children.is_empty() {
+                    writeln!(f, "  File Children:")?;
+                    for child in file_children {
+                        writeln!(
+                            f,
+                            "    {} (size: {:?} bytes)",
+                            child.path.display(),
+                            child.size
+                        )?;
+                    }
+                }
+
+                // Display directory children with only path.
+                if !dir_children.is_empty() {
+                    writeln!(f, "  Directory Children:")?;
+                    for child in dir_children {
+                        writeln!(f, "    {}", child.path.display())?;
+                    }
+                }
+
+                Ok(())
+            }
         }
     }
 }
